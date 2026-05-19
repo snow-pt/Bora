@@ -1,16 +1,52 @@
-import React from 'react';
-import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+// App.tsx
+import React, { useState, useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
+// Import Firebase tools
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './src/config/firebase';
+
 import LoginScreen from './src/screens/loginScreen';
+import HomeScreen from './src/screens/homeScreen';
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // This function listens for login/logout events the moment the app opens
+    const unsubscribe = onAuthStateChanged(auth, (currentUser: any) => {
+      setUser(currentUser);
+      setLoading(false); // Stop the loading spinner once we know the status
+    });
+
+    return unsubscribe;
+  }, []);
+
+  // Show a loading spinner while Firebase checks the user's phone for a saved login
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#FF6B6B" />
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaProvider>
-      {/* Set the status bar text color to match your theme (light or dark) */}
-      <StatusBar style="auto" />
-      
-      {/* Rendering your login screen here */}
-      <LoginScreen />
-    </SafeAreaProvider>
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {user ? (
+          // If a user is found, ONLY show the Home screen.
+          <Stack.Screen name="Home" component={HomeScreen} />
+        ) : (
+          // If no user is found, ONLY show the Login screen.
+          <Stack.Screen name="Login" component={LoginScreen} />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
