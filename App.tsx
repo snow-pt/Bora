@@ -10,6 +10,7 @@ import { auth } from './src/config/firebase';
 
 import LoginScreen from './src/screens/loginScreen';
 import HomeScreen from './src/screens/homeScreen';
+import ItineraryScreen from './src/screens/itineraryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +47,7 @@ export default function App() {
           // If no user is found, ONLY show the Login screen.
           <Stack.Screen name="Login" component={LoginScreen} />
         )}
+        <Stack.Screen name="Itinerary" component={ItineraryScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
