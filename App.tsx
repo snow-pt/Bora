@@ -11,6 +11,9 @@ import { auth } from './src/config/firebase';
 import LoginScreen from './src/screens/loginScreen';
 import HomeScreen from './src/screens/homeScreen';
 import ItineraryScreen from './src/screens/itineraryScreen';
+import ProfileScreen from './src/screens/profileScreen';
+import AccountDetailsScreen from './src/screens/accountDetailsScreen';
+import { ThemeProvider } from './src/context/themeContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -38,17 +41,22 @@ export default function App() {
   }
 
   return (
+  <ThemeProvider>
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          // If a user is found, ONLY show the Home screen.
-          <Stack.Screen name="Home" component={HomeScreen} />
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Itinerary" component={ItineraryScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
+          </>
         ) : (
-          // If no user is found, ONLY show the Login screen.
           <Stack.Screen name="Login" component={LoginScreen} />
         )}
-        <Stack.Screen name="Itinerary" component={ItineraryScreen} />
+        
       </Stack.Navigator>
     </NavigationContainer>
+    </ThemeProvider>
   );
 }
