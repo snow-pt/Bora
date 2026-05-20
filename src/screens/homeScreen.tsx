@@ -1,49 +1,78 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
+import { ThemeContext } from '../context/themeContext';
 
 // Import Firebase
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { collection, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore';
+import { db, auth } from '../config/firebase';
 
 export default function HomeScreen({ navigation }: any) {
+  const { isDark } = useContext(ThemeContext);
+  
+  const [userName, setUserName] = useState('Loading...');
   const [trips, setTrips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // FETCH DATA FROM FIREBASE
-  useEffect(() => {
-    const fetchTrips = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'trips'));
-        const tripsData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data() // Spreads out the city, dates, image, etc.
-        }));
-        setTrips(tripsData);
-      } catch (error) {
-        console.error("Error fetching trips: ", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const currentUser = auth.currentUser;
 
-    fetchTrips();
-  }, []);
+
+  // 1. FETCH DYNAMIC USER NAME (LIVE UPDATE)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // Listen to this specific user's document live
+    const unsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const fullName = docSnap.data().fullName || 'Traveler';
+        setUserName(fullName.split(' ')[0]); 
+      }
+    });
+
+    return () => unsubscribe(); // Cleanup listener
+  }, [currentUser]);
+
+  // 2. FETCH PRIVATE TRIPS
+  useEffect(() => {
+    if (!currentUser) return;
+
+    // 🔥 Query: "Look in 'trips', but ONLY give me the ones where userId matches mine!"
+    const q = query(collection(db, 'trips'), where('userId', '==', currentUser.uid));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const tripsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTrips(tripsData);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching trips: ", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        
+        {/* Dynamic Dark Mode Header */}
+        <View style={[styles.header, isDark && { backgroundColor: '#1E1E1E' }]}>
           <SafeAreaView edges={['top']}>
-            <Text style={styles.greeting}>Hello, Diogo</Text>
+            {/* Dynamic Name Fix */}
+            <Text style={[styles.greeting, isDark && { color: '#FFFFFF' }]}>Hello, {userName}</Text>
           </SafeAreaView>
         </View>
 
         <View style={styles.content}>
-          <View style={styles.financeCard}>
+          
+          {/* Finance Overlap Card */}
+          <View style={[styles.financeCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}>
             <View style={styles.financeRow}>
               <View>
                 <Text style={styles.financeLabel}>You Owe</Text>
@@ -56,17 +85,20 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>Upcoming Trips</Text>
+          <Text style={[styles.sectionTitle, isDark && { color: '#FFFFFF' }]}>Upcoming Trips</Text>
           
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
+          ) : trips.length === 0 ? (
+            <Text style={{ textAlign: 'center', color: colors.textMuted, marginTop: 20 }}>
+              No trips planned yet. Tap the + to start exploring!
+            </Text>
           ) : (
             <View style={styles.tripsList}>
               {trips.map((trip) => (
-                // CHANGED TO TOUCHABLE OPACITY FOR NAVIGATION
                 <TouchableOpacity 
                   key={trip.id} 
-                  style={styles.tripCard}
+                  style={[styles.tripCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}
                   onPress={() => navigation.navigate('Itinerary', { tripData: trip })}
                 >
                   <View style={styles.imageContainer}>
@@ -76,9 +108,8 @@ export default function HomeScreen({ navigation }: any) {
                     </View>
                   </View>
                   <View style={styles.tripInfo}>
-                    <Text style={styles.tripCity}>{trip.city}</Text>
+                    <Text style={[styles.tripCity, isDark && { color: '#FFFFFF' }]}>{trip.city}</Text>
                     <Text style={styles.tripDates}>{trip.dates}</Text>
-                    {/* Temporary placeholder until we build the Location feature */}
                     <Text style={styles.tripDistance}>📍 Distance calculating...</Text>
                   </View>
                 </TouchableOpacity>
@@ -88,27 +119,28 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* Bottom Navigation */}
-      <SafeAreaView edges={['bottom']} style={styles.bottomNav}>
+      {/* Dark Mode Bottom Navigation */}
+      <SafeAreaView edges={['bottom']} style={[styles.bottomNav, isDark && { backgroundColor: '#1E1E1E', borderTopColor: '#333' }]}>
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Expenses')}>
-          <Ionicons name="wallet-outline" size={24} color={colors.textMuted} />
-          <Text style={styles.navText}>Expenses</Text>
+          <Ionicons name="wallet-outline" size={24} color={isDark ? '#CCCCCC' : colors.textMuted} />
+          <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Expenses</Text>
         </TouchableOpacity>
+        
         <TouchableOpacity style={styles.navItemCenter} onPress={() => navigation.navigate('CreateTrip')}>
           <Ionicons name="add-circle" size={48} color={colors.primary} />
         </TouchableOpacity>
+        
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Profile')}>
-          <Ionicons name="person-outline" size={24} color={colors.textMuted} />
-          <Text style={styles.navText}>Profile</Text>
+          <Ionicons name="person-outline" size={24} color={isDark ? '#CCCCCC' : colors.textMuted} />
+          <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Profile</Text>
         </TouchableOpacity>
       </SafeAreaView>
     </View>
   );
 }
 
-// ... Keep your exact same styles down here ...
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   header: { backgroundColor: colors.secondary, paddingHorizontal: spacing.lg, paddingBottom: spacing.xl * 2 },
   greeting: { ...typography.h2, color: colors.surface, marginTop: spacing.md },
   content: { paddingHorizontal: spacing.lg },

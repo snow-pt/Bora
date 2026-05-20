@@ -1,14 +1,17 @@
 // src/screens/AccountDetailsScreen.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
+import { ThemeContext } from '../context/themeContext'; // 👈 Added the global brain
 
 import { auth, db } from '../config/firebase';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 
 export default function AccountDetailsScreen({ navigation }: any) {
+  const { isDark } = useContext(ThemeContext); // 👈 Tapped into the theme state
+
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,7 +34,7 @@ export default function AccountDetailsScreen({ navigation }: any) {
       }
     };
     fetchUserData();
-  }, []);
+  }, [currentUser]);
 
   const handleSave = async () => {
     if (!fullName.trim()) {
@@ -54,12 +57,12 @@ export default function AccountDetailsScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
+      <View style={[styles.header, isDark && { borderBottomColor: '#333' }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={28} color={colors.secondary} />
+          <Ionicons name="arrow-back" size={28} color={isDark ? '#FFFFFF' : colors.secondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Account Details</Text>
+        <Text style={[styles.headerTitle, isDark && { color: '#FFFFFF' }]}>Account Details</Text>
       </View>
 
       <View style={styles.content}>
@@ -67,11 +70,11 @@ export default function AccountDetailsScreen({ navigation }: any) {
           <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
         ) : (
           <>
-            <Text style={styles.label}>Full Name</Text>
-            <View style={styles.inputContainer}>
+            <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>Full Name</Text>
+            <View style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
               <Ionicons name="person-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, isDark && { color: '#FFFFFF' }]}
                 value={fullName}
                 onChangeText={setFullName}
                 placeholder="Enter your full name"
@@ -79,10 +82,10 @@ export default function AccountDetailsScreen({ navigation }: any) {
               />
             </View>
 
-            <Text style={styles.readOnlyLabel}>Email Address (Read Only)</Text>
-            <View style={[styles.inputContainer, styles.inputDisabled]}>
+            <Text style={[styles.readOnlyLabel, isDark && { color: '#888888' }]}>Email Address (Read Only)</Text>
+            <View style={[styles.inputContainer, styles.inputDisabled, isDark && { backgroundColor: '#2A2A2A', borderColor: '#333' }]}>
               <Ionicons name="mail-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
-              <Text style={styles.disabledText}>{currentUser?.email}</Text>
+              <Text style={[styles.disabledText, isDark && { color: '#AAAAAA' }]}>{currentUser?.email}</Text>
             </View>
 
             <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>

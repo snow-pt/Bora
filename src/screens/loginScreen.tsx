@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, border, typography } from '../theme/theme';
+import { useContext } from 'react';
+import { ThemeContext } from '../context/themeContext';
 
 // Import our Firebase setup
 import { auth, db } from '../config/firebase';
@@ -10,6 +12,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'fire
 import { doc, setDoc } from 'firebase/firestore';
 
 export default function LoginScreen({ navigation }: any) {
+  const { isDark } = useContext(ThemeContext);
   // Input form states
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -66,7 +69,7 @@ export default function LoginScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <View style={styles.content}>
         <Text style={styles.logo}>Bora!</Text>
         

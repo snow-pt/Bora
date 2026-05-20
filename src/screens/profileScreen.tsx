@@ -10,7 +10,7 @@ import { ThemeContext } from '../context/themeContext';
 // Firebase imports
 import { auth, db } from '../config/firebase';
 import { signOut, sendPasswordResetEmail, deleteUser } from 'firebase/auth';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
 
 // PRE-DEFINED AVATAR LIBRARY
 const AVATAR_OPTIONS = [
@@ -60,27 +60,22 @@ export default function ProfileScreen({ navigation }: any) {
 
     const currentUser = auth.currentUser;
 
-    // 1. FETCH USER DATA ON LOAD
+    // 1. FETCH USER DATA ON LOAD (LIVE UPDATE)
     useEffect(() => {
-        const fetchUserData = async () => {
-            if (currentUser) {
-                try {
-                    const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-                    if (userDoc.exists()) {
-                        const data = userDoc.data();
-                        setUserName(data.fullName || 'Traveler');
-                        if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
-                        if (data.currency) setCurrency(data.currency);
-                        if (data.pushNotifications !== undefined) setPushEnabled(data.pushNotifications);
-                        // NOTE: isDark is now securely handled by your ThemeContext!
-                    }
-                } catch (error) {
-                    console.error("Error fetching user data:", error);
-                }
+        if (!currentUser) return;
+
+        const unsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setUserName(data.fullName || 'Traveler');
+                if (data.avatarUrl) setAvatarUrl(data.avatarUrl);
+                if (data.currency) setCurrency(data.currency);
+                if (data.pushNotifications !== undefined) setPushEnabled(data.pushNotifications);
             }
-        };
-        fetchUserData();
-    }, []);
+        });
+
+        return () => unsubscribe();
+    }, [currentUser]);
 
     // 2. AVATAR SELECTION HANDLER
     const handleSelectAvatar = async (selectedUrl: string) => {
@@ -198,7 +193,6 @@ export default function ProfileScreen({ navigation }: any) {
                         </TouchableOpacity>
                     </View>
                     <Text style={[styles.userName, isDark && { color: '#FFFFFF' }]}>{userName}</Text>
-                    <Text style={styles.userSubtitle}>University of Maribor</Text>
                 </View>
 
                 <View style={styles.content}>

@@ -14,6 +14,7 @@ import ItineraryScreen from './src/screens/itineraryScreen';
 import ProfileScreen from './src/screens/profileScreen';
 import AccountDetailsScreen from './src/screens/accountDetailsScreen';
 import { ThemeProvider } from './src/context/themeContext';
+import CreateTripScreen from './src/screens/createTripScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -50,6 +51,7 @@ export default function App() {
             <Stack.Screen name="Itinerary" component={ItineraryScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
+            <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />
