@@ -1,4 +1,3 @@
-// App.tsx
 import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -15,6 +14,8 @@ import ProfileScreen from './src/screens/profileScreen';
 import AccountDetailsScreen from './src/screens/accountDetailsScreen';
 import { ThemeProvider } from './src/context/themeContext';
 import CreateTripScreen from './src/screens/createTripScreen';
+import EditTripScreen from './src/screens/editTripScreen';
+import AddActivityScreen from './src/screens/addActivityScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -52,6 +53,14 @@ export default function App() {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
             <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
+            <Stack.Screen name="EditTrip" component={EditTripScreen} options={{ presentation: 'modal' }} />
+            
+            {/* 2. ADD THE NEW SCREEN HERE WITH MODAL PRESENTATION */}
+            <Stack.Screen 
+              name="AddActivity" 
+              component={AddActivityScreen} 
+              options={{ presentation: 'modal' }} 
+            />
           </>
         ) : (
           <Stack.Screen name="Login" component={LoginScreen} />

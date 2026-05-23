@@ -6,72 +6,102 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
 
-// Import Firebase
-import { collection, onSnapshot, query, where, doc, getDoc } from 'firebase/firestore';
+// Notice we added updateDoc, arrayRemove, and arrayUnion
+import { collection, onSnapshot, query, where, or, doc, updateDoc, arrayRemove, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 
 export default function HomeScreen({ navigation }: any) {
   const { isDark } = useContext(ThemeContext);
   
   const [userName, setUserName] = useState('Loading...');
-  const [trips, setTrips] = useState<any[]>([]);
+  const [activeTrips, setActiveTrips] = useState<any[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const currentUser = auth.currentUser;
 
-
-  // 1. FETCH DYNAMIC USER NAME (LIVE UPDATE)
+  // 1. FETCH DYNAMIC USER NAME
   useEffect(() => {
     if (!currentUser) return;
-
-    // Listen to this specific user's document live
     const unsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
       if (docSnap.exists()) {
         const fullName = docSnap.data().fullName || 'Traveler';
         setUserName(fullName.split(' ')[0]); 
       }
     });
-
-    return () => unsubscribe(); // Cleanup listener
+    return () => unsubscribe();
   }, [currentUser]);
 
-  // 2. FETCH PRIVATE TRIPS
+  // 2. FETCH TRIPS (ACTIVE & PENDING)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser?.uid) return;
 
-    // 🔥 Query: "Look in 'trips', but ONLY give me the ones where userId matches mine!"
-    const q = query(collection(db, 'trips'), where('userId', '==', currentUser.uid));
+    // ACTIVE: Trips I created OR trips I have officially accepted via UID
+    const activeQuery = query(
+      collection(db, 'trips'), 
+      or(
+        where('userId', '==', currentUser.uid),
+        where('acceptedUserIds', 'array-contains', currentUser.uid)
+      )
+    );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const tripsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setTrips(tripsData);
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching trips: ", error);
+    const unsubscribeActive = onSnapshot(activeQuery, (snapshot) => {
+      const tripsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      tripsData.sort((a: any, b: any) => a.daysLeft - b.daysLeft);
+      setActiveTrips(tripsData);
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // PENDING: Trips where my UID is just sitting in the waiting room
+    const pendingQuery = query(
+      collection(db, 'trips'),
+      where('pendingUserIds', 'array-contains', currentUser.uid)
+    );
+
+    const unsubscribePending = onSnapshot(pendingQuery, (snapshot) => {
+      const invitesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPendingInvites(invitesData);
+    });
+
+    return () => {
+      unsubscribeActive();
+      unsubscribePending();
+    };
   }, [currentUser]);
+
+  // --- ACTIONS ---
+  // Notice how we move BOTH the UID and the Email arrays perfectly in sync!
+  const handleAcceptInvite = async (tripId: string) => {
+    if (!currentUser?.uid || !currentUser?.email) return;
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, {
+      pendingUserIds: arrayRemove(currentUser.uid),
+      pendingEmails: arrayRemove(currentUser.email.toLowerCase()),
+      acceptedUserIds: arrayUnion(currentUser.uid),
+      acceptedEmails: arrayUnion(currentUser.email.toLowerCase())
+    });
+  };
+
+  const handleDeclineInvite = async (tripId: string) => {
+    if (!currentUser?.uid || !currentUser?.email) return;
+    const tripRef = doc(db, 'trips', tripId);
+    await updateDoc(tripRef, {
+      pendingUserIds: arrayRemove(currentUser.uid),
+      pendingEmails: arrayRemove(currentUser.email.toLowerCase())
+    });
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
       <ScrollView showsVerticalScrollIndicator={false}>
         
-        {/* Dynamic Dark Mode Header */}
         <View style={[styles.header, isDark && { backgroundColor: '#1E1E1E' }]}>
           <SafeAreaView edges={['top']}>
-            {/* Dynamic Name Fix */}
             <Text style={[styles.greeting, isDark && { color: '#FFFFFF' }]}>Hello, {userName}</Text>
           </SafeAreaView>
         </View>
 
         <View style={styles.content}>
-          
-          {/* Finance Overlap Card */}
           <View style={[styles.financeCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}>
             <View style={styles.financeRow}>
               <View>
@@ -85,17 +115,41 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </View>
 
+          {/* --- PENDING INVITES SECTION --- */}
+          {pendingInvites.length > 0 && (
+            <View style={styles.invitesContainer}>
+              <Text style={[styles.sectionTitle, { fontSize: 16, color: colors.primary }]}>Pending Invites ({pendingInvites.length})</Text>
+              {pendingInvites.map((trip) => (
+                <View key={trip.id} style={[styles.inviteCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.inviteCity, isDark && { color: '#FFFFFF' }]}>Trip to {trip.city}</Text>
+                    <Text style={styles.inviteDates}>{trip.dates}</Text>
+                  </View>
+                  <View style={styles.inviteActions}>
+                    <TouchableOpacity onPress={() => handleDeclineInvite(trip.id)} style={styles.actionBtn}>
+                      <Ionicons name="close-circle" size={32} color={colors.danger} />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleAcceptInvite(trip.id)} style={styles.actionBtn}>
+                      <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* --- UPCOMING TRIPS SECTION --- */}
           <Text style={[styles.sectionTitle, isDark && { color: '#FFFFFF' }]}>Upcoming Trips</Text>
           
           {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
-          ) : trips.length === 0 ? (
+          ) : activeTrips.length === 0 ? (
             <Text style={{ textAlign: 'center', color: colors.textMuted, marginTop: 20 }}>
               No trips planned yet. Tap the + to start exploring!
             </Text>
           ) : (
             <View style={styles.tripsList}>
-              {trips.map((trip) => (
+              {activeTrips.map((trip) => (
                 <TouchableOpacity 
                   key={trip.id} 
                   style={[styles.tripCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}
@@ -119,7 +173,6 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* Dark Mode Bottom Navigation */}
       <SafeAreaView edges={['bottom']} style={[styles.bottomNav, isDark && { backgroundColor: '#1E1E1E', borderTopColor: '#333' }]}>
         <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Expenses')}>
           <Ionicons name="wallet-outline" size={24} color={isDark ? '#CCCCCC' : colors.textMuted} />
@@ -152,6 +205,15 @@ const styles = StyleSheet.create({
   financeRow: { flexDirection: 'row', justifyContent: 'space-between' },
   financeLabel: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.xs },
   financeAmount: { ...typography.h2 },
+  
+  // Invites Styles
+  invitesContainer: { marginTop: spacing.md, paddingBottom: spacing.sm },
+  inviteCard: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: border.radiusCard, padding: spacing.md, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2, marginBottom: spacing.sm },
+  inviteCity: { ...typography.body, fontWeight: 'bold', color: colors.secondary, marginBottom: 2 },
+  inviteDates: { ...typography.caption, color: colors.textMuted },
+  inviteActions: { flexDirection: 'row', gap: spacing.sm },
+  actionBtn: { padding: 4 },
+
   sectionTitle: { ...typography.h2, color: colors.secondary, marginTop: spacing.xl, marginBottom: spacing.md, fontSize: 20 },
   tripsList: { gap: spacing.md, paddingBottom: spacing.xl },
   tripCard: {

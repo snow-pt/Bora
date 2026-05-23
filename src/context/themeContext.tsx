@@ -1,4 +1,3 @@
-// src/context/ThemeContext.tsx
 import React, { createContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native'; // 👈 NEW: Detects phone's system theme
 import { auth, db } from '../config/firebase';
