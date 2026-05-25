@@ -7,7 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
 
-// NEW: Added getDocs, query, and where to search for the user!
+// Firebase imports
 import { db, auth } from '../config/firebase';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
@@ -24,7 +24,6 @@ export default function CreateTripScreen({ navigation }: any) {
   const [endDate, setEndDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState<{ visible: boolean; mode: 'start' | 'end' }>({ visible: false, mode: 'start' });
   
-  // NEW: Friends array now holds BOTH the uid and the email
   const [friends, setFriends] = useState<{uid: string, email: string}[]>([]);
   
   const [isModalVisible, setModalVisible] = useState(false);
@@ -73,18 +72,24 @@ export default function CreateTripScreen({ navigation }: any) {
     return safeDate;
   };
 
+  // 🔥 FIXED: Android closes instantly, iOS waits for "Done"
   const handleDateChange = (event: any, selectedDate?: Date) => {
-    // We keep the modal open until the user clicks "Done"
+    if (Platform.OS === 'android') {
+      setShowPicker({ ...showPicker, visible: false });
+    }
+    
     if (selectedDate) {
       if (showPicker.mode === 'start') {
         setStartDate(selectedDate);
+        // Prevent end date from being before the new start date
+        if (endDate < selectedDate) setEndDate(selectedDate);
       } else {
         setEndDate(selectedDate);
       }
     }
   };
 
-  // --- 🔥 NEW DATABASE FRIEND SEARCH ---
+  // --- DATABASE FRIEND SEARCH ---
   const handleAddFriend = async () => {
     const email = newFriendEmail.trim().toLowerCase();
     
@@ -93,7 +98,6 @@ export default function CreateTripScreen({ navigation }: any) {
       return;
     }
     
-    // Check if we already added them locally
     if (friends.some(f => f.email === email)) {
       Alert.alert("Duplicate", "Friend is already added!");
       return;
@@ -102,7 +106,6 @@ export default function CreateTripScreen({ navigation }: any) {
     setVerifyingUser(true);
 
     try {
-      // 1. Scan the 'users' collection for this exact email
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('email', '==', email));
       const snapshot = await getDocs(q);
@@ -112,14 +115,12 @@ export default function CreateTripScreen({ navigation }: any) {
         return;
       }
 
-      // 2. User exists! Grab their document ID (which is their UID)
       const userDoc = snapshot.docs[0];
       const newFriend = {
         uid: userDoc.id, 
         email: email
       };
 
-      // 3. Add to local state
       setFriends([...friends, newFriend]);
       setNewFriendEmail('');
       setModalVisible(false);
@@ -145,7 +146,6 @@ export default function CreateTripScreen({ navigation }: any) {
       const formattedDates = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
       const dynamicImageUrl = `https://loremflickr.com/800/600/${encodeURIComponent(city.split(',')[0].trim())},travel/all`;
 
-      // 🔥 STRUCTURE UPGRADE: Saving both UID arrays and Email arrays!
       const newTrip = {
         city: city.trim(),
         dates: formattedDates,
@@ -153,10 +153,10 @@ export default function CreateTripScreen({ navigation }: any) {
         latitude: latitude,   
         longitude: longitude, 
         image: dynamicImageUrl, 
-        pendingUserIds: friends.map(f => f.uid),       // For secure backend queries
-        pendingEmails: friends.map(f => f.email),      // For fast UI avatars
-        acceptedUserIds: [],                           // For secure backend queries
-        acceptedEmails: [],                            // For fast UI avatars
+        pendingUserIds: friends.map(f => f.uid),       
+        pendingEmails: friends.map(f => f.email),      
+        acceptedUserIds: [],                           
+        acceptedEmails: [],                            
         userId: auth.currentUser?.uid || 'anonymous'
       };
 
@@ -231,13 +231,19 @@ export default function CreateTripScreen({ navigation }: any) {
             </View>
           </View>
 
-          {showPicker.visible && (
-            <DateTimePicker value={showPicker.mode === 'start' ? startDate : endDate} mode="date" display="default" minimumDate={showPicker.mode === 'end' ? getSafeMinDate(startDate) : getSafeMinDate(new Date())} onChange={handleDateChange} />
+          {/* 🔥 ANDROID DATE PICKER */}
+          {Platform.OS === 'android' && showPicker.visible && (
+            <DateTimePicker 
+              value={showPicker.mode === 'start' ? startDate : endDate} 
+              mode="date" 
+              display="default" 
+              minimumDate={showPicker.mode === 'end' ? getSafeMinDate(startDate) : getSafeMinDate(new Date())} 
+              onChange={handleDateChange} 
+            />
           )}
 
           <Text style={[styles.label, { marginTop: spacing.md }, isDark && { color: '#CCCCCC' }]}>Travel Buddies</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendsContainer}>
-            {/* Render the mapped object correctly */}
             {friends.map((friend, index) => (
               <View key={index} style={styles.friendAvatar}>
                 <Image source={{ uri: `https://ui-avatars.com/api/?name=${friend.email}&background=random&color=fff` }} style={styles.avatarImage} />
@@ -255,6 +261,7 @@ export default function CreateTripScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
+      {/* FRIEND INVITE MODAL */}
       <Modal visible={isModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, isDark && { backgroundColor: '#1E1E1E' }]}>
@@ -282,6 +289,30 @@ export default function CreateTripScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      {/* 🔥 IOS DATE PICKER MODAL */}
+      {Platform.OS === 'ios' && (
+        <Modal visible={showPicker.visible} transparent={true} animationType="slide">
+          <View style={styles.datePickerModalOverlay}>
+            <View style={[styles.datePickerModalContent, isDark && { backgroundColor: '#1E1E1E' }]}>
+              <View style={[styles.datePickerHeader, isDark && { borderBottomColor: '#333' }]}>
+                <TouchableOpacity onPress={() => setShowPicker({ ...showPicker, visible: false })}>
+                  <Text style={styles.datePickerDoneButton}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={showPicker.mode === 'start' ? startDate : endDate}
+                mode="date"
+                display="inline" 
+                themeVariant={isDark ? "dark" : "light"} 
+                minimumDate={showPicker.mode === 'end' ? getSafeMinDate(startDate) : getSafeMinDate(new Date())}
+                onChange={handleDateChange}
+                style={styles.datePicker} // 👈 ADD THIS LINE
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -316,5 +347,12 @@ const styles = StyleSheet.create({
   modalCancel: { paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
   modalCancelText: { ...typography.body, color: colors.textMuted, fontWeight: 'bold' },
   modalAdd: { backgroundColor: colors.primary, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: border.radiusButton },
-  modalAddText: { ...typography.body, color: colors.surface, fontWeight: 'bold' }
+  modalAddText: { ...typography.body, color: colors.surface, fontWeight: 'bold' },
+  
+  /* 🔥 NEW STYLES FOR IOS DATE PICKER MODAL */
+  datePickerModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  datePickerModalContent: { backgroundColor: colors.surface, paddingBottom: spacing.xl * 2 },
+  datePickerHeader: { flexDirection: 'row', justifyContent: 'flex-end', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: '#E9ECEF' },
+  datePickerDoneButton: { ...typography.body, color: colors.primary, fontWeight: 'bold', fontSize: 16 },
+  datePicker: {width: '100%', alignSelf: 'center' }
 });
