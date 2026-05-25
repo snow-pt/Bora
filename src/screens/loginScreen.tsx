@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback,Keyboard, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { useContext } from 'react';
@@ -18,10 +18,11 @@ export default function LoginScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   
   // Toggle between registering a new account or logging into an existing one
-  const [isRegistering, setIsRegistering] = useState(true);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   const handleAuthAction = async () => {
     // 1. Basic empty check
+    Keyboard.dismiss();
     if (!email || !password || (isRegistering && !fullName)) {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
@@ -69,6 +70,7 @@ export default function LoginScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.content}>
         <Text style={styles.logo}>Bora!</Text>
         
@@ -121,6 +123,7 @@ export default function LoginScreen({ navigation }: any) {
           </Text>
         </TouchableOpacity>
       </View>
+      </TouchableWithoutFeedback>
     </SafeAreaView>
   );
 }
