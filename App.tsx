@@ -16,6 +16,8 @@ import { ThemeProvider } from './src/context/themeContext';
 import CreateTripScreen from './src/screens/createTripScreen';
 import EditTripScreen from './src/screens/editTripScreen';
 import AddActivityScreen from './src/screens/addActivityScreen';
+import ExpensesScreen from './src/screens/expensesScreen';
+import SelectGroupScreen from './src/screens/selectGroupScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -54,7 +56,9 @@ export default function App() {
             <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
             <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
             <Stack.Screen name="EditTrip" component={EditTripScreen} options={{ presentation: 'modal' }} />
-            
+            <Stack.Screen name="Expenses" component={ExpensesScreen} />
+            <Stack.Screen name="SelectGroup" component={SelectGroupScreen} />
+
             {/* 2. ADD THE NEW SCREEN HERE WITH MODAL PRESENTATION */}
             <Stack.Screen 
               name="AddActivity" 

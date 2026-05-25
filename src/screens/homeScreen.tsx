@@ -1,10 +1,13 @@
 // src/screens/HomeScreen.tsx
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
+
+// Importação do expo-location para a distância geográfica
+import * as Location from 'expo-location';
 
 // Notice we added updateDoc, arrayRemove, and arrayUnion
 import { collection, onSnapshot, query, where, or, doc, updateDoc, arrayRemove, arrayUnion } from 'firebase/firestore';
@@ -18,7 +21,41 @@ export default function HomeScreen({ navigation }: any) {
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Guardar as coordenadas do utilizador quando forem encontradas
+  const [userCoords, setUserCoords] = useState<Location.LocationObjectCoords | null>(null);
+
   const currentUser = auth.currentUser;
+
+  // Função interna para calcular a distância (Fórmula de Haversine)
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Raio da Terra em km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+    return d >= 100 ? d.toFixed(0) : d.toFixed(1); // Remove decimais se for muito longe
+  };
+
+  // Obter localização do telemóvel ao entrar no ecrã
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        setUserCoords(location.coords);
+      } catch (error) {
+        console.log("Erro ao obter localização:", error);
+      }
+    })();
+  }, []);
 
   // 1. FETCH DYNAMIC USER NAME
   useEffect(() => {
@@ -149,32 +186,46 @@ export default function HomeScreen({ navigation }: any) {
             </Text>
           ) : (
             <View style={styles.tripsList}>
-              {activeTrips.map((trip) => (
-                <TouchableOpacity 
-                  key={trip.id} 
-                  style={[styles.tripCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}
-                  onPress={() => navigation.navigate('Itinerary', { tripData: trip })}
-                >
-                  <View style={styles.imageContainer}>
-                    <Image source={{ uri: trip.image }} style={styles.tripImage} />
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>🔥 Leaves in {trip.daysLeft} Days!</Text>
+              {activeTrips.map((trip) => {
+                // Tenta calcular a distância dinamicamente se as propriedades latitude/longitude existirem no objeto trip do Firestore
+                let distanceDisplay = '📍 Location data unavailable';
+                if (userCoords && trip.latitude && trip.longitude) {
+                  const km = calculateDistance(
+                    userCoords.latitude,
+                    userCoords.longitude,
+                    Number(trip.latitude),
+                    Number(trip.longitude)
+                  );
+                  distanceDisplay = `📍 ${km} km away from you`;
+                }
+
+                return (
+                  <TouchableOpacity 
+                    key={trip.id} 
+                    style={[styles.tripCard, isDark && { backgroundColor: '#1E1E1E', shadowOpacity: 0 }]}
+                    onPress={() => navigation.navigate('Itinerary', { tripData: trip })}
+                  >
+                    <View style={styles.imageContainer}>
+                      <Image source={{ uri: trip.image }} style={styles.tripImage} />
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>🔥 Leaves in {trip.daysLeft} Days!</Text>
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.tripInfo}>
-                    <Text style={[styles.tripCity, isDark && { color: '#FFFFFF' }]}>{trip.city}</Text>
-                    <Text style={styles.tripDates}>{trip.dates}</Text>
-                    <Text style={styles.tripDistance}>📍 Distance calculating...</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                    <View style={styles.tripInfo}>
+                      <Text style={[styles.tripCity, isDark && { color: '#FFFFFF' }]}>{trip.city}</Text>
+                      <Text style={styles.tripDates}>{trip.dates}</Text>
+                      <Text style={styles.tripDistance}>{distanceDisplay}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </View>
       </ScrollView>
 
       <SafeAreaView edges={['bottom']} style={[styles.bottomNav, isDark && { backgroundColor: '#1E1E1E', borderTopColor: '#333' }]}>
-        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Expenses')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('SelectGroup')}>
           <Ionicons name="wallet-outline" size={24} color={isDark ? '#CCCCCC' : colors.textMuted} />
           <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Expenses</Text>
         </TouchableOpacity>
