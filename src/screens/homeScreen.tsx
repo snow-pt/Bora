@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
 
-// Importação do expo-location para a distância geográfica
 import * as Location from 'expo-location';
 
 // Notice we added updateDoc, arrayRemove, and arrayUnion
@@ -21,26 +20,25 @@ export default function HomeScreen({ navigation }: any) {
   const [pendingInvites, setPendingInvites] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Guardar as coordenadas do utilizador quando forem encontradas
+  const [totalYouOwe, setTotalYouOwe] = useState(0);
+  const [totalYouAreOwed, setTotalYouAreOwed] = useState(0);
+
   const [userCoords, setUserCoords] = useState<Location.LocationObjectCoords | null>(null);
 
   const currentUser = auth.currentUser;
 
-  // Função interna para calcular a distância (Fórmula de Haversine)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371; // Raio da Terra em km
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = 
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const d = R * c;
     return d >= 100 ? d.toFixed(0) : d.toFixed(1); // Remove decimais se for muito longe
   };
 
-  // Obter localização do telemóvel ao entrar no ecrã
   useEffect(() => {
     (async () => {
       try {
@@ -106,6 +104,42 @@ export default function HomeScreen({ navigation }: any) {
     };
   }, [currentUser]);
 
+  // Apenas adicionado este useEffect para calcular os valores reais das despesas em tempo real
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const expensesQuery = query(
+      collection(db, 'expenses'),
+      or(
+        where('creatorId', '==', currentUser.uid),
+        where('debtorId', '==', currentUser.uid)
+      )
+    );
+
+    const unsubscribeExpenses = onSnapshot(expensesQuery, (snapshot) => {
+      let owe = 0;
+      let owed = 0;
+
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (data.paymentStatus === 'Confirmed') return;
+
+        const amount = Number(data.amount) || 0;
+
+        if (data.debtorId === currentUser.uid) {
+          owe += amount;
+        } else if (data.creatorId === currentUser.uid) {
+          owed += amount;
+        }
+      });
+
+      setTotalYouOwe(owe);
+      setTotalYouAreOwed(owed);
+    });
+
+    return () => unsubscribeExpenses();
+  }, [currentUser]);
+
   // --- ACTIONS ---
   // Notice how we move BOTH the UID and the Email arrays perfectly in sync!
   const handleAcceptInvite = async (tripId: string) => {
@@ -143,11 +177,13 @@ export default function HomeScreen({ navigation }: any) {
             <View style={styles.financeRow}>
               <View>
                 <Text style={styles.financeLabel}>You Owe</Text>
-                <Text style={[styles.financeAmount, { color: colors.danger }]}>€142</Text>
+                {/* Substituído o valor fixo pela variável real totalYouOwe */}
+                <Text style={[styles.financeAmount, { color: colors.danger }]}>€{totalYouOwe.toFixed(2)}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.financeLabel}>You are Owed</Text>
-                <Text style={[styles.financeAmount, { color: colors.success }]}>€89</Text>
+                {/* Substituído o valor fixo pela variável real totalYouAreOwed */}
+                <Text style={[styles.financeAmount, { color: colors.success }]}>€{totalYouAreOwed.toFixed(2)}</Text>
               </View>
             </View>
           </View>
