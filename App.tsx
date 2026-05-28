@@ -18,6 +18,18 @@ import EditTripScreen from './src/screens/editTripScreen';
 import AddActivityScreen from './src/screens/addActivityScreen';
 import ExpensesScreen from './src/screens/expensesScreen';
 import SelectGroupScreen from './src/screens/selectGroupScreen';
+import * as Notifications from 'expo-notifications';
+
+// Tells the app to show notifications as banners at the top of the screen even if the app is open
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,      
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,     
+    shouldShowList: true,       
+  }),
+});
 
 const Stack = createNativeStackNavigator();
 

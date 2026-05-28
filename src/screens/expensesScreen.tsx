@@ -1,3 +1,4 @@
+// src/screens/ExpensesScreen.tsx
 import React, { useContext, useState, useEffect, useCallback } from 'react';
 import { 
   View, 
@@ -12,12 +13,20 @@ import {
   Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ThemeContext } from '../context/themeContext';
+import { ThemeContext } from '../context/themeContext'; 
 import { colors, spacing, border, typography } from '../theme/theme'; 
 import { Ionicons } from '@expo/vector-icons';
 
 import { collection, onSnapshot, query, addDoc, doc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
+
+const currencySymbols: { [key: string]: string } = {
+  EUR: '€',
+  USD: '$',
+  GBP: '£',
+  CZK: 'Kč',
+  HUF: 'Ft'
+};
 
 export default function ExpensesScreen({ route, navigation }: any) {
   const { isDark } = useContext(ThemeContext);
@@ -29,19 +38,56 @@ export default function ExpensesScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
 
+  // CURRENCY STATES
+  const [userCurrency, setUserCurrency] = useState('EUR');
+  const [currencySymbol, setCurrencySymbol] = useState('€');
+  const [exchangeRate, setExchangeRate] = useState(1); 
+
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [selectedDebtor, setSelectedDebtor] = useState<string>(''); 
 
+  // 1. FETCH CURRENCY
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        const savedCurrency = docSnap.data().currency || 'EUR';
+        setUserCurrency(savedCurrency);
+        setCurrencySymbol(currencySymbols[savedCurrency] || '€');
+      }
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // 2. FETCH LIVE EXCHANGE RATES
+  useEffect(() => {
+    const fetchRates = async () => {
+      if (userCurrency === 'EUR') {
+        setExchangeRate(1);
+        return;
+      }
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/EUR');
+        const data = await res.json();
+        if (data && data.rates && data.rates[userCurrency]) {
+          setExchangeRate(data.rates[userCurrency]);
+        }
+      } catch (error) {
+        console.error("Error fetching exchange rates:", error);
+      }
+    };
+    fetchRates();
+  }, [userCurrency]);
+
+  // 3. FETCH GROUP MEMBERS
   useEffect(() => {
     if (!groupId) return;
-
     const tripRef = doc(db, 'trips', groupId);
     const unsubscribeTrip = onSnapshot(tripRef, async (tripSnap) => {
       if (tripSnap.exists()) {
         const tripData = tripSnap.data();
         const uids = [tripData.userId, ...(tripData.acceptedUserIds || [])];
-        
         const otherUIDs = uids.filter(uid => uid !== currentUser?.uid);
         
         const membersFetched = await Promise.all(
@@ -50,10 +96,7 @@ export default function ExpensesScreen({ route, navigation }: any) {
               const userSnap = await getDoc(doc(db, 'users', uid));
               if (userSnap.exists()) {
                 const userData = userSnap.data();
-                return {
-                  id: uid,
-                  name: userData.fullName || `User (${uid.substring(0, 4)})`
-                };
+                return { id: uid, name: userData.fullName || `User (${uid.substring(0, 4)})` };
               }
             } catch (err) {
               console.log(`Error fetching user ${uid}:`, err);
@@ -61,48 +104,37 @@ export default function ExpensesScreen({ route, navigation }: any) {
             return { id: uid, name: `User (${uid.substring(0, 4)})` };
           })
         );
-          
         setGroupMembers(membersFetched);
       }
     });
-
     return () => unsubscribeTrip();
   }, [groupId, currentUser]);
 
+  // 4. FETCH EXPENSES
   useEffect(() => {
     if (!currentUser?.uid || !groupId) {
       setLoading(false);
       return;
     }
-
-    const expensesQuery = query(
-      collection(db, 'expenses'),
-      where('groupId', '==', groupId),
-      orderBy('createdAt', 'desc')
-    );
-
+    const expensesQuery = query(collection(db, 'expenses'), where('groupId', '==', groupId), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(expensesQuery, (snapshot) => {
-      const expensesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const expensesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setExpenses(expensesData);
       setLoading(false);
     }, (error) => {
       console.log("Error loading expenses:", error);
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [currentUser, groupId]);
 
   const totalToReceive = expenses
     .filter(e => e.creatorId === currentUser?.uid && e.paymentStatus !== 'Confirmed')
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0) * exchangeRate;
 
   const totalToPay = expenses
     .filter(e => e.debtorId === currentUser?.uid && e.paymentStatus !== 'Confirmed')
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0) * exchangeRate;
 
   const isFormValid = title.trim().length > 0 && amount.trim().length > 0 && selectedDebtor !== '';
 
@@ -118,10 +150,13 @@ export default function ExpensesScreen({ route, navigation }: any) {
       return;
     }
 
+    const amountInBaseCurrency = parseFloat((parsedAmount / exchangeRate).toFixed(2));
+
     try {
+      // JUST SAVE TO FIREBASE! The Home Screen will detect this and fire the notification automatically.
       await addDoc(collection(db, 'expenses'), {
         title: title.trim(),
-        amount: parsedAmount,
+        amount: amountInBaseCurrency, 
         creatorId: currentUser?.uid,       
         debtorId: selectedDebtor,         
         paymentStatus: 'Pending',        
@@ -133,16 +168,20 @@ export default function ExpensesScreen({ route, navigation }: any) {
       setAmount('');
       setSelectedDebtor('');
       setModalVisible(false);
+      
     } catch (error) {
       console.error("Error saving expense: ", error);
+      Alert.alert("Error", "Could not save the expense.");
     }
   };
 
   const handleExpensePress = async (expense: any) => {
+    const localAmount = (expense.amount * exchangeRate).toFixed(2);
+
     if (expense.debtorId === currentUser?.uid && expense.paymentStatus === 'Pending') {
       Alert.alert(
         "Mark as Paid?",
-        `Do you want to notify that you have transferred ${(expense.amount || 0).toFixed(2)}€?`,
+        `Do you want to notify that you have transferred ${currencySymbol}${localAmount}?`,
         [
           { text: "No", style: "cancel" },
           { 
@@ -157,7 +196,7 @@ export default function ExpensesScreen({ route, navigation }: any) {
     else if (expense.creatorId === currentUser?.uid && expense.paymentStatus === 'AwaitingConfirmation') {
       Alert.alert(
         "Confirm Receipt! 💰",
-        `Do you confirm that you received ${(expense.amount || 0).toFixed(2)}€ for "${expense.title}"?`,
+        `Do you confirm that you received ${currencySymbol}${localAmount} for "${expense.title}"?`,
         [
           { 
             text: "Not received yet", 
@@ -182,7 +221,7 @@ export default function ExpensesScreen({ route, navigation }: any) {
 
   const renderExpenseItem = ({ item }: { item: any }) => {
     const isMyExpense = item.creatorId === currentUser?.uid;
-    const itemAmount = Number(item.amount) || 0;
+    const itemAmount = (Number(item.amount) || 0) * exchangeRate;
     
     let statusText = "Pending";
     let statusColor = colors.danger;
@@ -220,7 +259,7 @@ export default function ExpensesScreen({ route, navigation }: any) {
         </View>
 
         <Text style={[styles.expenseAmount, { color: isMyExpense ? colors.success : colors.danger }]}>
-          {isMyExpense ? '+' : '-'} {itemAmount.toFixed(2)}€
+          {isMyExpense ? '+' : '-'} {currencySymbol}{itemAmount.toFixed(2)}
         </Text>
       </TouchableOpacity>
     );
@@ -239,12 +278,12 @@ export default function ExpensesScreen({ route, navigation }: any) {
       <View style={[styles.summaryContainer, isDark && { backgroundColor: '#1E1E1E' }]}>
         <View style={styles.summaryBox}>
           <Text style={styles.summaryLabel}>To Receive</Text>
-          <Text style={[styles.summaryValue, { color: colors.success }]}>+{totalToReceive.toFixed(2)}€</Text>
+          <Text style={[styles.summaryValue, { color: colors.success }]}>+{currencySymbol}{totalToReceive.toFixed(2)}</Text>
         </View>
         <View style={[styles.divider, isDark && { backgroundColor: '#333' }]} />
         <View style={styles.summaryBox}>
           <Text style={styles.summaryLabel}>To Pay</Text>
-          <Text style={[styles.summaryValue, { color: colors.danger }]}>-{totalToPay.toFixed(2)}€</Text>
+          <Text style={[styles.summaryValue, { color: colors.danger }]}>-{currencySymbol}{totalToPay.toFixed(2)}</Text>
         </View>
       </View>
 
@@ -281,7 +320,7 @@ export default function ExpensesScreen({ route, navigation }: any) {
 
             <TextInput
               style={[styles.input, isDark && { backgroundColor: '#2A2A2A', color: '#FFF', borderColor: '#444' }]}
-              placeholder="Amount (€)"
+              placeholder={`Amount (${currencySymbol})`}
               placeholderTextColor="#666"
               keyboardType="numeric"
               value={amount}

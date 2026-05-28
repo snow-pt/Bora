@@ -1,16 +1,24 @@
 // src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
-import { ThemeContext } from '../context/themeContext';
+import { ThemeContext } from '../context/themeContext'; 
 
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications'; 
 
-// Notice we added updateDoc, arrayRemove, and arrayUnion
 import { collection, onSnapshot, query, where, or, doc, updateDoc, arrayRemove, arrayUnion } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
+
+const currencySymbols: { [key: string]: string } = {
+  EUR: '€',
+  USD: '$',
+  GBP: '£',
+  CZK: 'Kč',
+  HUF: 'Ft'
+};
 
 export default function HomeScreen({ navigation }: any) {
   const { isDark } = useContext(ThemeContext);
@@ -23,12 +31,20 @@ export default function HomeScreen({ navigation }: any) {
   const [totalYouOwe, setTotalYouOwe] = useState(0);
   const [totalYouAreOwed, setTotalYouAreOwed] = useState(0);
 
+  const [userCurrency, setUserCurrency] = useState('EUR');
+  const [currencySymbol, setCurrencySymbol] = useState('€');
+  const [exchangeRate, setExchangeRate] = useState(1);
+
   const [userCoords, setUserCoords] = useState<Location.LocationObjectCoords | null>(null);
 
   const currentUser = auth.currentUser;
 
+  // 🔥 REFS TO PREVENT NOTIFICATION SPAM ON INITIAL APP LOAD
+  const initialInvitesLoaded = useRef(false);
+  const initialExpensesLoaded = useRef(false);
+
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // Raio da Terra em km
+    const R = 6371; 
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     const a = 
@@ -36,7 +52,7 @@ export default function HomeScreen({ navigation }: any) {
       Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     const d = R * c;
-    return d >= 100 ? d.toFixed(0) : d.toFixed(1); // Remove decimais se for muito longe
+    return d >= 100 ? d.toFixed(0) : d.toFixed(1); 
   };
 
   useEffect(() => {
@@ -55,23 +71,47 @@ export default function HomeScreen({ navigation }: any) {
     })();
   }, []);
 
-  // 1. FETCH DYNAMIC USER NAME
+  // 1. FETCH DYNAMIC USER NAME & CURRENCY PREFERENCE
   useEffect(() => {
     if (!currentUser) return;
     const unsubscribe = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
       if (docSnap.exists()) {
-        const fullName = docSnap.data().fullName || 'Traveler';
+        const data = docSnap.data();
+        const fullName = data.fullName || 'Traveler';
         setUserName(fullName.split(' ')[0]); 
+
+        const savedCurrency = data.currency || 'EUR';
+        setUserCurrency(savedCurrency);
+        setCurrencySymbol(currencySymbols[savedCurrency] || '€');
       }
     });
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 2. FETCH TRIPS (ACTIVE & PENDING)
+  // 2. FETCH LIVE EXCHANGE RATES (Base: EUR)
+  useEffect(() => {
+    const fetchRates = async () => {
+      if (userCurrency === 'EUR') {
+        setExchangeRate(1);
+        return;
+      }
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/EUR');
+        const data = await res.json();
+        if (data && data.rates && data.rates[userCurrency]) {
+          setExchangeRate(data.rates[userCurrency]);
+        }
+      } catch (error) {
+        console.error("Error fetching exchange rates:", error);
+      }
+    };
+    fetchRates();
+  }, [userCurrency]);
+
+  // 3. FETCH TRIPS (ACTIVE & PENDING) + TRIP INVITE NOTIFICATIONS
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    // ACTIVE: Trips I created OR trips I have officially accepted via UID
     const activeQuery = query(
       collection(db, 'trips'), 
       or(
@@ -87,7 +127,6 @@ export default function HomeScreen({ navigation }: any) {
       setLoading(false);
     });
 
-    // PENDING: Trips where my UID is just sitting in the waiting room
     const pendingQuery = query(
       collection(db, 'trips'),
       where('pendingUserIds', 'array-contains', currentUser.uid)
@@ -96,6 +135,27 @@ export default function HomeScreen({ navigation }: any) {
     const unsubscribePending = onSnapshot(pendingQuery, (snapshot) => {
       const invitesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPendingInvites(invitesData);
+
+      // 🔥 PREVENT INITIAL SPAM: Ignore the first load, only trigger on live updates
+      if (!initialInvitesLoaded.current) {
+        initialInvitesLoaded.current = true;
+        return;
+      }
+
+      // 🔥 NOTIFICATION: NEW TRIP INVITE
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "New Trip Invite! ✈️",
+              body: `You've been invited to ${data.city}. Tap to check it out!`,
+              sound: true,
+            },
+            trigger: null, 
+          });
+        }
+      });
     });
 
     return () => {
@@ -104,7 +164,7 @@ export default function HomeScreen({ navigation }: any) {
     };
   }, [currentUser]);
 
-  // Apenas adicionado este useEffect para calcular os valores reais das despesas em tempo real
+  // 4. FETCH EXPENSES + EXPENSE LOOP NOTIFICATIONS
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -135,13 +195,66 @@ export default function HomeScreen({ navigation }: any) {
 
       setTotalYouOwe(owe);
       setTotalYouAreOwed(owed);
+
+      // 🔥 PREVENT INITIAL SPAM: Ignore the first load
+      if (!initialExpensesLoaded.current) {
+        initialExpensesLoaded.current = true;
+        return;
+      }
+
+      // 🔥 EXPENSE NOTIFICATION LOOP
+      snapshot.docChanges().forEach((change) => {
+        const data = change.doc.data();
+        const localAmount = (data.amount * exchangeRate).toFixed(2);
+
+        // TRIGGER 1: NEW DEBT CREATED
+        if (change.type === 'added') {
+          if (data.debtorId === currentUser.uid) {
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: "New Trip Expense! 💸",
+                body: `You owe ${currencySymbol}${localAmount} for "${data.title}".`,
+                sound: true,
+              },
+              trigger: null,
+            });
+          }
+        }
+
+        // TRIGGER 2 & 3: STATUS UPDATED (Paid vs Confirmed)
+        if (change.type === 'modified') {
+          
+          // If you are the CREATOR, and they marked it as Paid
+          if (data.creatorId === currentUser.uid && data.paymentStatus === 'AwaitingConfirmation') {
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: "Payment Sent! 🤑",
+                body: `Someone marked "${data.title}" as paid. Open the app to confirm!`,
+                sound: true,
+              },
+              trigger: null,
+            });
+          }
+
+          // If you are the DEBTOR, and they Confirmed the receipt
+          if (data.debtorId === currentUser.uid && data.paymentStatus === 'Confirmed') {
+            Notifications.scheduleNotificationAsync({
+              content: {
+                title: "Payment Confirmed! ✅",
+                body: `Your payment of ${currencySymbol}${localAmount} for "${data.title}" was approved.`,
+                sound: true,
+              },
+              trigger: null,
+            });
+          }
+        }
+      });
     });
 
     return () => unsubscribeExpenses();
-  }, [currentUser]);
+  }, [currentUser, exchangeRate, currencySymbol]);
 
   // --- ACTIONS ---
-  // Notice how we move BOTH the UID and the Email arrays perfectly in sync!
   const handleAcceptInvite = async (tripId: string) => {
     if (!currentUser?.uid || !currentUser?.email) return;
     const tripRef = doc(db, 'trips', tripId);
@@ -177,13 +290,15 @@ export default function HomeScreen({ navigation }: any) {
             <View style={styles.financeRow}>
               <View>
                 <Text style={styles.financeLabel}>You Owe</Text>
-                {/* Substituído o valor fixo pela variável real totalYouOwe */}
-                <Text style={[styles.financeAmount, { color: colors.danger }]}>€{totalYouOwe.toFixed(2)}</Text>
+                <Text style={[styles.financeAmount, { color: colors.danger }]}>
+                  {currencySymbol}{(totalYouOwe * exchangeRate).toFixed(2)}
+                </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={styles.financeLabel}>You are Owed</Text>
-                {/* Substituído o valor fixo pela variável real totalYouAreOwed */}
-                <Text style={[styles.financeAmount, { color: colors.success }]}>€{totalYouAreOwed.toFixed(2)}</Text>
+                <Text style={[styles.financeAmount, { color: colors.success }]}>
+                  {currencySymbol}{(totalYouAreOwed * exchangeRate).toFixed(2)}
+                </Text>
               </View>
             </View>
           </View>
@@ -223,7 +338,6 @@ export default function HomeScreen({ navigation }: any) {
           ) : (
             <View style={styles.tripsList}>
               {activeTrips.map((trip) => {
-                // Tenta calcular a distância dinamicamente se as propriedades latitude/longitude existirem no objeto trip do Firestore
                 let distanceDisplay = '📍 Location data unavailable';
                 if (userCoords && trip.latitude && trip.longitude) {
                   const km = calculateDistance(
