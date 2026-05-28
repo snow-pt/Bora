@@ -71,6 +71,21 @@ export default function HomeScreen({ navigation }: any) {
     })();
   }, []);
 
+  // 🔥 LISTEN FOR NOTIFICATION TAPS
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      // Read the secret map from the notification we just tapped
+      const notificationData = response.notification.request.content.data;
+      
+      // If the map says to go to Expenses, instantly navigate there!
+      if (notificationData && notificationData.screen === 'Expenses' && notificationData.groupId) {
+        navigation.navigate('Expenses', { groupId: notificationData.groupId });
+      }
+    });
+
+    return () => subscription.remove();
+  }, [navigation]);
+
   // 1. FETCH DYNAMIC USER NAME & CURRENCY PREFERENCE
   useEffect(() => {
     if (!currentUser) return;
@@ -215,6 +230,8 @@ export default function HomeScreen({ navigation }: any) {
                 title: "New Trip Expense! 💸",
                 body: `You owe ${currencySymbol}${localAmount} for "${data.title}".`,
                 sound: true,
+                // 🔥 THE SECRET MAP
+                data: { screen: 'Expenses', groupId: data.groupId }, 
               },
               trigger: null,
             });
@@ -224,25 +241,27 @@ export default function HomeScreen({ navigation }: any) {
         // TRIGGER 2 & 3: STATUS UPDATED (Paid vs Confirmed)
         if (change.type === 'modified') {
           
-          // If you are the CREATOR, and they marked it as Paid
           if (data.creatorId === currentUser.uid && data.paymentStatus === 'AwaitingConfirmation') {
             Notifications.scheduleNotificationAsync({
               content: {
                 title: "Payment Sent! 🤑",
                 body: `Someone marked "${data.title}" as paid. Open the app to confirm!`,
                 sound: true,
+                // 🔥 THE SECRET MAP
+                data: { screen: 'Expenses', groupId: data.groupId },
               },
               trigger: null,
             });
           }
 
-          // If you are the DEBTOR, and they Confirmed the receipt
           if (data.debtorId === currentUser.uid && data.paymentStatus === 'Confirmed') {
             Notifications.scheduleNotificationAsync({
               content: {
                 title: "Payment Confirmed! ✅",
                 body: `Your payment of ${currencySymbol}${localAmount} for "${data.title}" was approved.`,
                 sound: true,
+                // 🔥 THE SECRET MAP
+                data: { screen: 'Expenses', groupId: data.groupId },
               },
               trigger: null,
             });
