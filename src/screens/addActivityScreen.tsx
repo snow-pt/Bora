@@ -45,7 +45,6 @@ export default function AddActivityScreen({ route, navigation }: any) {
     try {
       const formattedTime = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
       
-      // If we are editing, UPDATE the existing doc. If creating, ADD a new doc!
       if (activityToEdit) {
         const activityRef = doc(db, 'trips', tripId, 'activities', activityToEdit.id);
         await updateDoc(activityRef, {

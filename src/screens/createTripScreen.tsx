@@ -72,7 +72,6 @@ export default function CreateTripScreen({ navigation }: any) {
     return safeDate;
   };
 
-  // 🔥 FIXED: Android closes instantly, iOS waits for "Done"
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowPicker({ ...showPicker, visible: false });
@@ -111,7 +110,7 @@ export default function CreateTripScreen({ navigation }: any) {
       const snapshot = await getDocs(q);
 
       if (snapshot.empty) {
-        Alert.alert("User Not Found", "No account is registered with this email. Ask them to sign up first!");
+        Alert.alert("User Not Found", "No account is registered with this email.");
         return;
       }
 

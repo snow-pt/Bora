@@ -1,29 +1,26 @@
 // src/screens/itineraryScreen.tsx
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
+import { useWeather } from '../hooks/useWeather';
 
 // NEW: Import the Firestore tools to read data and update the completed status
 import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
-const dummyWeather = [
-  { id: '1', day: 'Mon', temp: '22°', icon: 'partly-sunny', color: '#FDB813' },
-  { id: '2', day: 'Tue', temp: '24°', icon: 'sunny', color: '#FDB813' },
-  { id: '3', day: 'Wed', temp: '19°', icon: 'rainy', color: '#4A90E2' },
-  { id: '4', day: 'Thu', temp: '21°', icon: 'cloudy', color: '#888888' },
-  { id: '5', day: 'Fri', temp: '25°', icon: 'sunny', color: '#FDB813' },
-];
-
 export default function ItineraryScreen({ route, navigation }: any) {
   const { isDark } = useContext(ThemeContext);
   const { tripData } = route.params;
 
+  // --- FETCH LIVE WEATHER ---
+  const { forecast, loadingWeather } = useWeather(tripData?.latitude, tripData?.longitude);
+
   const [dailyActivities, setDailyActivities] = useState<any[]>([]);
   const tripBuddies = tripData?.acceptedEmails || [];
+  
 
   // --- 📡 FIREBASE LISTENER ---
   useEffect(() => {
@@ -59,15 +56,15 @@ export default function ItineraryScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, isDark && { backgroundColor: '#121212' }]}>
       
+      {/* --- HERO IMAGE (Only Buttons inside) --- */}
       <View style={styles.heroContainer}>
         <Image source={{ uri: tripData.image }} style={styles.heroImage} />
         <View style={styles.heroOverlay} />
         <SafeAreaView edges={['top']} style={styles.heroSafeArea}>
-          <View style={styles.heroHeader}>
+          <View style={styles.headerNavRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
               <Ionicons name="arrow-back" size={28} color="#FFFFFF" />
             </TouchableOpacity>
-            <Text style={styles.heroTitle}>{tripData.city}</Text>
             <TouchableOpacity onPress={() => navigation.navigate('EditTrip', { tripData })} style={styles.iconButton}>
               <Ionicons name="pencil" size={24} color="#FFFFFF" />
             </TouchableOpacity>
@@ -75,25 +72,44 @@ export default function ItineraryScreen({ route, navigation }: any) {
         </SafeAreaView>
       </View>
 
+      {/* --- SCROLL CONTENT (Text is now outside the image!) --- */}
       <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollContent}>
         
-        <View style={styles.datesContainer}>
-          <Text style={[styles.datesText, isDark && { color: '#CCCCCC' }]}>{tripData.dates}</Text>
+        {/* Destination & Dates */}
+        <View style={styles.tripInfoContainer}>
+          <Text style={[styles.tripTitle, isDark && { color: '#FFFFFF' }]} numberOfLines={3}>
+            {tripData.city}
+          </Text>
+          <Text style={[styles.tripDates, isDark && { color: '#CCCCCC' }]}>
+            {tripData.dates}
+          </Text>
         </View>
 
         {/* Forecast Box */}
         <View style={styles.sectionContainer}>
           <View style={[styles.weatherBox, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
             <Text style={[styles.weatherBoxTitle, isDark && { color: '#FFFFFF' }]}>5-Day Forecast</Text>
-            <View style={styles.weatherForecastRow}>
-              {dummyWeather.map((w) => (
-                <View key={w.id} style={styles.weatherDay}>
-                  <Text style={[styles.weatherDayText, isDark && { color: '#888' }]}>{w.day}</Text>
-                  <Ionicons name={w.icon as any} size={26} color={w.color} style={{ marginVertical: 4 }} />
-                  <Text style={[styles.weatherTempText, isDark && { color: '#FFFFFF' }]}>{w.temp}</Text>
-                </View>
-              ))}
-            </View>
+            
+            {loadingWeather ? (
+              <View style={{ paddingVertical: spacing.md, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : forecast.length > 0 ? (
+              <View style={styles.weatherForecastRow}>
+                {forecast.map((w) => (
+                  <View key={w.id} style={styles.weatherDay}>
+                    <Text style={[styles.weatherDayText, isDark && { color: '#888' }]}>{w.day}</Text>
+                    <Ionicons name={w.icon as any} size={26} color={w.color} style={{ marginVertical: 4 }} />
+                    <Text style={[styles.weatherTempText, isDark && { color: '#FFFFFF' }]}>{w.temp}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[{ textAlign: 'center', fontStyle: 'italic', color: colors.textMuted }, isDark && { color: '#888' }]}>
+                Weather unavailable for this location.
+              </Text>
+            )}
+
           </View>
         </View>
 
@@ -145,7 +161,6 @@ export default function ItineraryScreen({ route, navigation }: any) {
                     {index !== dailyActivities.length - 1 && (
                       <View style={[
                         styles.verticalLine, 
-                        // FIX: Dims the uncompleted connecting line in dark mode
                         isDark && { backgroundColor: '#333' }, 
                         activity.completed && { backgroundColor: colors.success }
                       ]} />
@@ -188,7 +203,6 @@ export default function ItineraryScreen({ route, navigation }: any) {
           <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Home</Text>
         </TouchableOpacity>
         
-        {/* Adds activity and passes the exact tripId to the modal! */}
         <TouchableOpacity style={styles.navItemCenter} onPress={() => navigation.navigate('AddActivity', { tripId: tripData.id })}>
           <View style={styles.floatingActionBtn}>
             <Ionicons name="add" size={36} color={colors.surface} />
@@ -209,16 +223,18 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flex: 1 },
   
-  heroContainer: { height: 220, position: 'relative' },
+  // Hero Image (Slightly shorter since text is removed)
+  heroContainer: { height: 180, position: 'relative' },
   heroImage: { width: '100%', height: '100%', position: 'absolute' },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
-  heroSafeArea: { flex: 1, justifyContent: 'space-between' },
-  heroHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingTop: Platform.OS === 'android' ? spacing.md : 0 },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
+  heroSafeArea: { flex: 1 },
+  headerNavRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingTop: Platform.OS === 'android' ? spacing.md : spacing.sm },
   iconButton: { padding: spacing.xs },
-  heroTitle: { ...typography.h1, color: '#FFFFFF', fontSize: 24 },
-
-  datesContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  datesText: { ...typography.body, fontWeight: 'bold', color: colors.secondary },
+  
+  // New Text Area Outside Image
+  tripInfoContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm },
+  tripTitle: { ...typography.h1, color: colors.secondary, fontSize: 32, lineHeight: 36, marginBottom: 4 },
+  tripDates: { ...typography.body, fontWeight: 'bold', color: colors.textMuted },
 
   weatherBox: { backgroundColor: colors.surface, borderRadius: border.radiusCard, padding: spacing.md, marginTop: spacing.md, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2, borderWidth: 1, borderColor: '#F0F0F0' },
   weatherBoxTitle: { ...typography.caption, fontWeight: 'bold', color: colors.secondary, marginBottom: spacing.sm },
