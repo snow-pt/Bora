@@ -11,14 +11,14 @@ export const colors = {
 export const spacing = {
   xs: 4,
   sm: 8,
-  md: 16, // Standard padding
+  md: 16,
   lg: 24,
-  xl: 32, // Major section gaps
+  xl: 32,
 };
 
 export const border = {
   radiusCard: 16,
-  radiusButton: 100, // Fully pill-shaped
+  radiusButton: 100,
 };
 
 export const typography = {

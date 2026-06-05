@@ -209,9 +209,9 @@ export default function ItineraryScreen({ route, navigation }: any) {
           </View>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.navItem} onPress={() => console.log('Navigate to Trip Chat')}>
-          <Ionicons name="chatbubbles-outline" size={28} color={isDark ? '#CCCCCC' : colors.secondary} />
-          <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Group Chat</Text>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Profile')}>
+          <Ionicons name="person-outline" size={28} color={isDark ? '#CCCCCC' : colors.secondary} />
+          <Text style={[styles.navText, isDark && { color: '#CCCCCC' }]}>Profile</Text>
         </TouchableOpacity>
       </SafeAreaView>
 
