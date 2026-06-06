@@ -1,9 +1,10 @@
-// src/screens/createTripScreen.tsx
 import React, { useState, useContext } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Platform, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Theme and Context
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
 
@@ -12,28 +13,34 @@ import { db, auth } from '../config/firebase';
 import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 export default function CreateTripScreen({ navigation }: any) {
+  // Handles Dark/Light UI Mode
   const { isDark } = useContext(ThemeContext);
 
+  // Location State
   const [city, setCity] = useState('');
   const [latitude, setLatitude] = useState(0);
   const [longitude, setLongitude] = useState(0);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Date State
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState<{ visible: boolean; mode: 'start' | 'end' }>({ visible: false, mode: 'start' });
   
+  // Buddy/Invite State, temporarily holds friends to be invited once the trip is officially created
   const [friends, setFriends] = useState<{uid: string, email: string}[]>([]);
   
+  // UI/Modal State
   const [isModalVisible, setModalVisible] = useState(false);
   const [newFriendEmail, setNewFriendEmail] = useState('');
   const [saving, setSaving] = useState(false);
   const [verifyingUser, setVerifyingUser] = useState(false);
 
-  // --- CITY SEARCH ---
+  // Pings the Open-Meteo Geocoding API to suggest real cities as the user types.
   const handleCitySearch = async (text: string) => {
     setCity(text); 
+    // Wait until they type at least 3 characters to save API calls
     if (text.length > 2) {
       setIsSearching(true);
       try {
@@ -50,6 +57,7 @@ export default function CreateTripScreen({ navigation }: any) {
     }
   };
 
+  // Extracts the full name and coordinates when a user taps a city suggestion.
   const handleSelectCity = (item: any) => {
     const fullName = `${item.name}${item.admin1 ? `, ${item.admin1}` : ''}, ${item.country}`;
     setCity(fullName);
@@ -58,7 +66,7 @@ export default function CreateTripScreen({ navigation }: any) {
     setSuggestions([]); 
   };
 
-  // --- DATE HELPERS ---
+  // Calculates how many days until the trip starts (used for Home screen countdown)
   const calculateDaysLeft = (start: Date) => {
     const today = new Date();
     const differenceInTime = start.getTime() - today.getTime();
@@ -66,12 +74,14 @@ export default function CreateTripScreen({ navigation }: any) {
     return differenceInDays > 0 ? differenceInDays : 0;
   };
 
+  // Prevents users from picking a date in the past
   const getSafeMinDate = (date: Date) => {
     const safeDate = new Date(date);
     safeDate.setHours(0, 0, 0, 0); 
     return safeDate;
   };
 
+  // Handles native date picker logic for both iOS and Android.
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
       setShowPicker({ ...showPicker, visible: false });
@@ -88,7 +98,7 @@ export default function CreateTripScreen({ navigation }: any) {
     }
   };
 
-  // --- DATABASE FRIEND SEARCH ---
+  // Validates a friend email against the Firebase Users collection. If they exist, they are queued up in the local state to be invited.
   const handleAddFriend = async () => {
     const email = newFriendEmail.trim().toLowerCase();
     
@@ -97,6 +107,7 @@ export default function CreateTripScreen({ navigation }: any) {
       return;
     }
     
+    // Prevent adding the same person twice
     if (friends.some(f => f.email === email)) {
       Alert.alert("Duplicate", "Friend is already added!");
       return;
@@ -114,6 +125,7 @@ export default function CreateTripScreen({ navigation }: any) {
         return;
       }
 
+      // Add their UID and Email to the staging array
       const userDoc = snapshot.docs[0];
       const newFriend = {
         uid: userDoc.id, 
@@ -132,7 +144,9 @@ export default function CreateTripScreen({ navigation }: any) {
     }
   };
 
+  // Constructs the trip object and saves it to Firestore.
   const handleCreateTrip = async () => {
+    // A trip must have valid coordinates for distance calculation to work.
     if (!city.trim() || latitude === 0) {
       Alert.alert("Missing Info", "Please search for and select a valid destination city from the list.");
       return;
@@ -143,19 +157,24 @@ export default function CreateTripScreen({ navigation }: any) {
     try {
       const daysLeftCalc = calculateDaysLeft(startDate);
       const formattedDates = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      // Generate a dynamic placeholder image based on the city name using LoremFlickr
       const dynamicImageUrl = `https://loremflickr.com/800/600/${encodeURIComponent(city.split(',')[0].trim())},travel/all`;
 
+      // Trip Data Structure
       const newTrip = {
         city: city.trim(),
         dates: formattedDates,
         daysLeft: daysLeftCalc,
         latitude: latitude,   
         longitude: longitude, 
-        image: dynamicImageUrl, 
+        image: dynamicImageUrl,
+        // Friends are pushed to PENDING arrays so they receive an invite notification
         pendingUserIds: friends.map(f => f.uid),       
         pendingEmails: friends.map(f => f.email),      
-        acceptedUserIds: [],                           
-        acceptedEmails: [],                            
+        // Accepted arrays start with only the creator
+        acceptedUserIds: auth.currentUser?.uid ? [auth.currentUser.uid] : [],                           
+        acceptedEmails: auth.currentUser?.email ? [auth.currentUser.email] : [],     
+        // Mark who owns this trip for permission checks                 
         userId: auth.currentUser?.uid || 'anonymous'
       };
 
@@ -174,6 +193,7 @@ export default function CreateTripScreen({ navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="close" size={28} color={isDark ? '#FFFFFF' : colors.secondary} />
@@ -199,6 +219,7 @@ export default function CreateTripScreen({ navigation }: any) {
             {isSearching && <ActivityIndicator size="small" color={colors.primary} />}
           </View>
 
+          {/* Render the dropdown if the API returns matching cities */}
           {suggestions.length > 0 && (
             <View style={[styles.dropdown, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
               {suggestions.map((item, index) => (
@@ -212,8 +233,10 @@ export default function CreateTripScreen({ navigation }: any) {
           )}
         </View>
 
+        {/* Date Selection */}
         <View>
           <View style={styles.row}>
+            {/* Start Date Button */}
             <View style={{ flex: 1, marginRight: spacing.sm }}>
               <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>Start Date</Text>
               <TouchableOpacity style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]} onPress={() => setShowPicker({ visible: true, mode: 'start' })}>
@@ -221,6 +244,8 @@ export default function CreateTripScreen({ navigation }: any) {
                 <Text style={[styles.input, { paddingVertical: spacing.md }, isDark && { color: '#FFFFFF' }]}>{startDate.toLocaleDateString()}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* End Date Button */}
             <View style={{ flex: 1, marginLeft: spacing.sm }}>
               <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>End Date</Text>
               <TouchableOpacity style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]} onPress={() => setShowPicker({ visible: true, mode: 'end' })}>
@@ -230,7 +255,7 @@ export default function CreateTripScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* 🔥 ANDROID DATE PICKER */}
+          {/* Android Native Date Picker */}
           {Platform.OS === 'android' && showPicker.visible && (
             <DateTimePicker 
               value={showPicker.mode === 'start' ? startDate : endDate} 
@@ -241,26 +266,30 @@ export default function CreateTripScreen({ navigation }: any) {
             />
           )}
 
+          {/* Queue Travel Buddies */}
           <Text style={[styles.label, { marginTop: spacing.md }, isDark && { color: '#CCCCCC' }]}>Travel Buddies</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.friendsContainer}>
+            {/* Show staged friends */}
             {friends.map((friend, index) => (
               <View key={index} style={styles.friendAvatar}>
                 <Image source={{ uri: `https://ui-avatars.com/api/?name=${friend.email}&background=random&color=fff` }} style={styles.avatarImage} />
                 <Text style={[styles.friendName, isDark && { color: '#CCCCCC' }]} numberOfLines={1}>{friend.email.split('@')[0]}</Text>
               </View>
             ))}
+            {/* Trigger modal to search for a new friend */}
             <TouchableOpacity style={styles.addFriendButton} onPress={() => setModalVisible(true)}>
               <Ionicons name="add" size={28} color={colors.primary} />
             </TouchableOpacity>
           </ScrollView>
 
+          {/* Final Submit Button */}
           <TouchableOpacity style={[styles.saveButton, saving && { opacity: 0.7 }]} onPress={handleCreateTrip} disabled={saving}>
             {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveButtonText}>Create Trip</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>
 
-      {/* FRIEND INVITE MODAL */}
+      {/* Friend Invite Modal */}
       <Modal visible={isModalVisible} transparent={true} animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, isDark && { backgroundColor: '#1E1E1E' }]}>
@@ -289,7 +318,7 @@ export default function CreateTripScreen({ navigation }: any) {
         </View>
       </Modal>
 
-      {/* 🔥 IOS DATE PICKER MODAL */}
+      {/* IOS Date Picker Modal */}
       {Platform.OS === 'ios' && (
         <Modal visible={showPicker.visible} transparent={true} animationType="slide">
           <View style={styles.datePickerModalOverlay}>
@@ -317,26 +346,37 @@ export default function CreateTripScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  // Base Layout
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg, paddingBottom: spacing.md },
   backButton: { marginRight: spacing.md },
   headerTitle: { ...typography.h1, color: colors.secondary },
   content: { padding: spacing.lg },
+
+  // Inputs and Autocomplete
   label: { ...typography.caption, color: colors.secondary, marginBottom: spacing.xs, fontWeight: 'bold' },
   inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: '#E9ECEF', borderRadius: border.radiusCard, paddingHorizontal: spacing.md, marginBottom: spacing.lg },
   inputIcon: { marginRight: spacing.sm },
   input: { flex: 1, paddingVertical: spacing.md, ...typography.body, color: colors.secondary },
   row: { flexDirection: 'row', justifyContent: 'space-between' },
+
+  // City Dropdown
   dropdown: { backgroundColor: colors.surface, borderRadius: border.radiusCard, borderWidth: 1, borderColor: '#E9ECEF', marginTop: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   dropdownItem: { padding: spacing.md, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   dropdownText: { ...typography.body, color: colors.secondary },
+
+  // Avatars
   friendsContainer: { flexDirection: 'row', marginBottom: spacing.xl, paddingVertical: spacing.sm },
   friendAvatar: { alignItems: 'center', marginRight: spacing.md, width: 60 },
   avatarImage: { width: 50, height: 50, borderRadius: 25, marginBottom: 4 },
   friendName: { ...typography.caption, color: colors.secondary, fontSize: 10, textAlign: 'center' },
   addFriendButton: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: colors.primary, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: `${colors.primary}10` },
+
+  // Submit Button
   saveButton: { backgroundColor: colors.primary, paddingVertical: spacing.lg, borderRadius: border.radiusButton, alignItems: 'center', marginTop: spacing.xl },
   saveButtonText: { ...typography.body, color: colors.surface, fontWeight: 'bold', fontSize: 16 },
+  
+  // Invite Friend Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: spacing.xl },
   modalContent: { backgroundColor: colors.surface, padding: spacing.xl, borderRadius: border.radiusCard, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 },
   modalTitle: { ...typography.h2, color: colors.secondary, marginBottom: spacing.xs },
@@ -348,7 +388,7 @@ const styles = StyleSheet.create({
   modalAdd: { backgroundColor: colors.primary, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: border.radiusButton },
   modalAddText: { ...typography.body, color: colors.surface, fontWeight: 'bold' },
   
-  /* 🔥 NEW STYLES FOR IOS DATE PICKER MODAL */
+  // iOS Date Picker Modal Styles
   datePickerModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   datePickerModalContent: { backgroundColor: colors.surface, paddingBottom: spacing.xl * 2 },
   datePickerHeader: { flexDirection: 'row', justifyContent: 'flex-end', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: '#E9ECEF' },

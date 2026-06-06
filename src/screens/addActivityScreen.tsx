@@ -1,15 +1,18 @@
-// src/screens/AddActivityScreen.tsx
 import React, { useState, useContext } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+// Theme and Context
 import { colors, spacing, border, typography } from '../theme/theme';
 import { ThemeContext } from '../context/themeContext';
 
+// Firebase Imports
 import { db } from '../config/firebase';
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
+// Predefined categories for activities to standardize icons and labels across the app
 const activityCategories = [
   { id: '1', name: 'restaurant-outline', label: 'Food' },
   { id: '2', name: 'camera-outline', label: 'Sightseeing' },
@@ -20,32 +23,41 @@ const activityCategories = [
 ];
 
 export default function AddActivityScreen({ route, navigation }: any) {
+  // Handles Dark/Light UI Mode
   const { isDark } = useContext(ThemeContext);
+  // Extract the parent trip ID and the optional activity data we want to edit
   const { tripId, activityToEdit } = route.params; 
 
+  // If we are editing, pre-fill the states with the existing data. Otherwise, start blank.
   const [title, setTitle] = useState(activityToEdit ? activityToEdit.title : '');
   const [location, setLocation] = useState(activityToEdit ? activityToEdit.location : '');
   const [time, setTime] = useState(new Date()); 
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState(activityToEdit ? activityToEdit.icon : 'camera-outline');
+  
+  // Tracks whether the app is currently talking to Firebase (disables the save button)
   const [saving, setSaving] = useState(false);
 
+  // Captures the time selected from the native DateTimePicker
   const handleTimeChange = (event: any, selectedTime?: Date) => {
-    setShowTimePicker(false);
-    if (event.type === 'dismissed') return;
-    if (selectedTime) setTime(selectedTime);
+    setShowTimePicker(false); // Hide the picker once a selection is made
+    if (event.type === 'dismissed') return; // User canceled the picker
+    if (selectedTime) setTime(selectedTime); // Update state with the new time
   };
 
+  // Validates the form and sends the data to Firestore. Handles both "Create" and "Update" scenarios.
   const handleSaveActivity = async () => {
+    // Prevents saving empty activities
     if (!title.trim()) {
       Alert.alert("Missing Info", "Please give this activity a title.");
       return;
     }
     setSaving(true);
     try {
+      // Format the raw Date object into a readable string
       const formattedTime = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      
       if (activityToEdit) {
+        // Edit existing activity
         const activityRef = doc(db, 'trips', tripId, 'activities', activityToEdit.id);
         await updateDoc(activityRef, {
           title: title.trim(),
@@ -54,6 +66,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
           icon: selectedIcon
         });
       } else {
+        // Create new activity
         const activitiesRef = collection(db, 'trips', tripId, 'activities');
         await addDoc(activitiesRef, {
           title: title.trim(),
@@ -75,6 +88,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={[styles.container, isDark && { backgroundColor: '#121212' }]}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="close" size={28} color={isDark ? '#FFFFFF' : colors.secondary} />
@@ -83,7 +97,9 @@ export default function AddActivityScreen({ route, navigation }: any) {
         <View style={{ width: 28 }} />
       </View>
 
+      {/* Main Form */}
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Title Input */}
         <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>What are we doing?</Text>
         <View style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
           <TextInput
@@ -95,6 +111,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
           />
         </View>
 
+        {/* Location Input */}
         <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>Location</Text>
         <View style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
           <Ionicons name="location-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
@@ -107,6 +124,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
           />
         </View>
 
+        {/* Time Picker Trigger */}
         <Text style={[styles.label, isDark && { color: '#CCCCCC' }]}>Time</Text>
         <TouchableOpacity 
           style={[styles.inputContainer, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}
@@ -118,6 +136,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
           </Text>
         </TouchableOpacity>
 
+        {/* Date/Time Picker Modal */}
         {showTimePicker && (
           <DateTimePicker
             value={time}
@@ -127,6 +146,7 @@ export default function AddActivityScreen({ route, navigation }: any) {
           />
         )}
 
+        {/* Category/Icon Selector */}
         <Text style={[styles.label, { marginTop: spacing.md }, isDark && { color: '#CCCCCC' }]}>Category</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.iconScroll}>
           {activityCategories.map((cat) => {
@@ -146,11 +166,13 @@ export default function AddActivityScreen({ route, navigation }: any) {
           })}
         </ScrollView>
 
+        {/* Submit Button */}
         <TouchableOpacity 
           style={[styles.saveButton, saving && { opacity: 0.7 }]} 
           onPress={handleSaveActivity} 
           disabled={saving}
         >
+          {/* Show a loading spinner if saving, otherwise show text */}
           {saving ? <ActivityIndicator color={colors.surface} /> : <Text style={styles.saveButtonText}>Save Activity</Text>}
         </TouchableOpacity>
       </ScrollView>
@@ -159,19 +181,30 @@ export default function AddActivityScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  // Base Layout
   container: { flex: 1, backgroundColor: colors.background },
+
+  // Header
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg },
   backButton: { padding: spacing.xs },
   headerTitle: { ...typography.h2, color: colors.secondary, fontSize: 20 },
+
+  // Form Layout
   content: { padding: spacing.lg },
   label: { ...typography.caption, color: colors.secondary, marginBottom: spacing.xs, fontWeight: 'bold' },
+
+  // Inputs
   inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: '#E9ECEF', borderRadius: border.radiusCard, paddingHorizontal: spacing.md, marginBottom: spacing.lg },
   inputIcon: { marginRight: spacing.sm },
   input: { flex: 1, paddingVertical: spacing.md, ...typography.body, color: colors.secondary },
+
+  // Category Selector
   iconScroll: { flexDirection: 'row', marginBottom: spacing.xl * 2, paddingVertical: spacing.xs },
   iconBubble: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: border.radiusCard, marginRight: spacing.sm, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 1 },
   iconBubbleSelected: { backgroundColor: colors.primary },
   iconLabel: { ...typography.caption, color: colors.secondary, marginTop: 4, fontSize: 10, fontWeight: 'bold' },
+
+  // Save Button
   saveButton: { backgroundColor: colors.primary, paddingVertical: spacing.lg, borderRadius: border.radiusButton, alignItems: 'center' },
   saveButtonText: { ...typography.body, color: colors.surface, fontWeight: 'bold', fontSize: 16 }
 });
