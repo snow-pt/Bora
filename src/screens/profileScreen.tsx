@@ -1,3 +1,10 @@
+/**
+ * @file ProfileScreen.tsx
+ * @description Centralized settings and account management interface. 
+ * Allows users to modify visual preferences, operational settings (currency, notifications), 
+ * and perform destructive account actions. Syncs bidirectionally with Firestore.
+ */
+
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, Alert, Modal, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,12 +13,11 @@ import { colors, spacing, border, typography } from '../theme/theme';
 import * as Notifications from 'expo-notifications';
 import { ThemeContext } from '../context/themeContext';
 
-// Firebase imports
 import { auth, db } from '../config/firebase';
 import { signOut, sendPasswordResetEmail, deleteUser } from 'firebase/auth';
-import { doc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, addDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
-// PRE-DEFINED AVATAR LIBRARY
+// Static library of endpoint URIs for the avatar selection modal
 const AVATAR_OPTIONS = [
     'https://api.dicebear.com/7.x/avataaars/png?seed=Felix&backgroundColor=b6e3f4',
     'https://api.dicebear.com/7.x/avataaars/png?seed=Aneka&backgroundColor=c0aede',
@@ -21,7 +27,11 @@ const AVATAR_OPTIONS = [
     'https://api.dicebear.com/7.x/avataaars/png?seed=Nala&backgroundColor=b6e3f4',
 ];
 
-// Updated MenuRow to accept an 'onPress' action
+/**
+ * MenuRow Primitive Component
+ * @description Reusable UI component for rendering consistent list items within the settings menu.
+ * Supports binary toggles (Switch) and navigational actions (Chevron/OnPress).
+ */
 const MenuRow = ({ icon, title, value, hasSwitch, switchValue, onToggle, isDestructive, onPress }: any) => (
     <TouchableOpacity style={styles.menuRow} disabled={hasSwitch} onPress={onPress}>
         <View style={styles.menuRowLeft}>
@@ -46,20 +56,28 @@ const MenuRow = ({ icon, title, value, hasSwitch, switchValue, onToggle, isDestr
 );
 
 export default function ProfileScreen({ navigation }: any) {
+    // Subscribes to the global theme context for responsive UI rendering
     const { isDark, toggleTheme } = useContext(ThemeContext);
     
+    // --- State Management ---
+    // User Identity States
     const [userName, setUserName] = useState('Loading...');
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [avatarModalVisible, setAvatarModalVisible] = useState(false);
-
+    
+    // User Preference States
     const [pushEnabled, setPushEnabled] = useState(true);
-
     const [currency, setCurrency] = useState('EUR');
+
+    // UI Modal Controllers
+    const [avatarModalVisible, setAvatarModalVisible] = useState(false);
     const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
 
     const currentUser = auth.currentUser;
 
-    // 1. FETCH USER DATA ON LOAD (LIVE UPDATE)
+    /**
+     * Establishes a real-time Firestore subscription to the user's document.
+     * Ensures that if the user updates their profile on another device, this screen reflects it instantly.
+     */
     useEffect(() => {
         if (!currentUser) return;
 
@@ -76,7 +94,9 @@ export default function ProfileScreen({ navigation }: any) {
         return () => unsubscribe();
     }, [currentUser]);
 
-    // 2. AVATAR SELECTION HANDLER
+    /**
+     * Applies the selected avatar URL to local state and persists it to Firestore.
+     */
     const handleSelectAvatar = async (selectedUrl: string) => {
         setAvatarUrl(selectedUrl);
         setAvatarModalVisible(false);
@@ -85,7 +105,9 @@ export default function ProfileScreen({ navigation }: any) {
         }
     };
 
-    // 3. CURRENCY HANDLER
+    /**
+     * Applies the selected base currency to local state and persists it to Firestore.
+     */
     const handleSelectCurrency = async (selectedCurrency: string) => {
         setCurrency(selectedCurrency);
         setCurrencyModalVisible(false);
@@ -94,7 +116,10 @@ export default function ProfileScreen({ navigation }: any) {
         }
     };
 
-    // 4. PUSH NOTIFICATIONS HANDLER
+    /**
+     * Manages Push Notification preferences.
+     * Requests native OS permissions if the user attempts to toggle notifications ON.
+     */
     const handleTogglePush = async (value: boolean) => {
         if (value) {
             const { status } = await Notifications.requestPermissionsAsync();
@@ -109,7 +134,9 @@ export default function ProfileScreen({ navigation }: any) {
         }
     };
 
-    // 5. CHANGE PASSWORD
+    /**
+     * Triggers the Firebase Auth password reset flow via the user's registered email.
+     */
     const handlePasswordReset = async () => {
         if (currentUser?.email) {
             try {
@@ -121,7 +148,10 @@ export default function ProfileScreen({ navigation }: any) {
         }
     };
 
-    // 6. DELETE ACCOUNT
+    /**
+     * Executes the destructive account deletion flow.
+     * Removes the user's Firestore document before purging them from the Firebase Auth system.
+     */
     const handleDeleteAccount = () => {
         Alert.alert(
             "Delete Account",
@@ -139,6 +169,7 @@ export default function ProfileScreen({ navigation }: any) {
                                 await signOut(auth);
                             }
                         } catch (error: any) {
+                            // Firebase requires a recent login to execute account deletion for security reasons
                             Alert.alert("Security Requirement", "Please log out and log back in to verify your identity before deleting your account.");
                         }
                     }
@@ -147,6 +178,9 @@ export default function ProfileScreen({ navigation }: any) {
         );
     };
 
+    /**
+     * Terminates the current active session.
+     */
     const handleLogout = () => {
         Alert.alert(
             "Logout account",
@@ -165,16 +199,16 @@ export default function ProfileScreen({ navigation }: any) {
                     }
                 }
             ]
-        )
+        );
     };
 
     return (
-        // 🔥 MAGIC FIX: The background color now dynamically listens to isDark!
         <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#121212' : colors.background }]}>
             <ScrollView showsVerticalScrollIndicator={false}>
+                
+                {/* Profile Header Section */}
                 <View style={styles.header}>
                     <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                        {/* Make the arrow readable in dark mode */}
                         <Ionicons name="arrow-back" size={28} color={isDark ? '#FFFFFF' : colors.secondary} />
                     </TouchableOpacity>
 
@@ -194,7 +228,10 @@ export default function ProfileScreen({ navigation }: any) {
                     <Text style={[styles.userName, isDark && { color: '#FFFFFF' }]}>{userName}</Text>
                 </View>
 
+                {/* Settings Configuration Section */}
                 <View style={styles.content}>
+                    
+                    {/* Account Management Group */}
                     <Text style={styles.sectionTitle}>Account</Text>
                     <View style={[styles.cardGroup, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
                         <MenuRow icon="person-outline" title="Account Details" onPress={() => navigation.navigate('AccountDetails')} />
@@ -204,6 +241,7 @@ export default function ProfileScreen({ navigation }: any) {
                         <MenuRow icon="wallet-outline" title="Default Currency" value={currency} onPress={() => setCurrencyModalVisible(true)} />
                     </View>
 
+                    {/* Preferences Group */}
                     <Text style={styles.sectionTitle}>Preferences</Text>
                     <View style={[styles.cardGroup, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }]}>
                         <MenuRow icon="notifications-outline" title="Push Notifications" hasSwitch switchValue={pushEnabled} onToggle={handleTogglePush} />
@@ -211,6 +249,7 @@ export default function ProfileScreen({ navigation }: any) {
                         <MenuRow icon="moon-outline" title="Dark Mode" hasSwitch switchValue={isDark} onToggle={toggleTheme} />
                     </View>
 
+                    {/* Destructive Actions Group */}
                     <View style={[styles.cardGroup, isDark && { backgroundColor: '#1E1E1E', borderColor: '#333' }, { marginTop: spacing.lg }]}>
                         <MenuRow icon="trash-outline" title="Delete Account" isDestructive onPress={handleDeleteAccount} />
                     </View>
@@ -221,7 +260,7 @@ export default function ProfileScreen({ navigation }: any) {
                 </View>
             </ScrollView>
 
-            {/* AVATAR SELECTOR MODAL */}
+            {/* Avatar Selection Modal */}
             <Modal visible={avatarModalVisible} transparent={true} animationType="fade">
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalContentCenter, isDark && { backgroundColor: '#1E1E1E' }]}>
@@ -242,7 +281,7 @@ export default function ProfileScreen({ navigation }: any) {
                 </View>
             </Modal>
 
-            {/* CURRENCY SELECTOR MODAL */}
+            {/* Currency Selection Modal */}
             <Modal visible={currencyModalVisible} transparent={true} animationType="slide">
                 <View style={styles.modalOverlayBottom}>
                     <View style={[styles.modalContentBottom, isDark && { backgroundColor: '#1E1E1E' }]}>
@@ -355,7 +394,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: spacing.md,
-        backgroundColor: 'transparent', // Let parent cardGroup handle background
+        backgroundColor: 'transparent',
     },
     menuRowLeft: {
         flexDirection: 'row',
@@ -364,7 +403,7 @@ const styles = StyleSheet.create({
     },
     menuRowTitle: {
         ...typography.body,
-        color: colors.textMuted, // Adjusted so it doesn't clash as hard in dark mode
+        color: colors.textMuted,
     },
     menuRowRight: {
         flexDirection: 'row',
