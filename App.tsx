@@ -1,9 +1,15 @@
+/**
+ * @file App.tsx
+ * @description Root application component. Establishes global providers (Theme, Navigation),
+ * configures foreground notification behaviors, and manages the primary authentication routing 
+ * gate (Unauthenticated vs. Authenticated flows) using Firebase Auth.
+ */
+
 import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-// Import Firebase tools
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/config/firebase';
 
@@ -18,9 +24,12 @@ import EditTripScreen from './src/screens/editTripScreen';
 import AddActivityScreen from './src/screens/addActivityScreen';
 import ExpensesScreen from './src/screens/expensesScreen';
 import SelectGroupScreen from './src/screens/selectGroupScreen';
+
 import * as Notifications from 'expo-notifications';
 
-// Tells the app to show notifications as banners at the top of the screen even if the app is open
+// Configure Expo Notifications foreground presentation parameters.
+// Ensures that notifications received while the application is active are displayed
+// as standard OS banner alerts rather than being silently absorbed.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,      
@@ -34,20 +43,27 @@ Notifications.setNotificationHandler({
 const Stack = createNativeStackNavigator();
 
 export default function App() {
+  // --- Global Application State ---
   const [user, setUser] = useState(null);
+  // Blocks the UI rendering until Firebase confirms the initial session state
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Mounts a real-time listener to the Firebase Authentication service.
+   * Automatically resolves the user's session token from secure device storage upon app launch
+   * and triggers re-renders if the session expires or the user explicitly logs out.
+   */
   useEffect(() => {
-    // This function listens for login/logout events the moment the app opens
     const unsubscribe = onAuthStateChanged(auth, (currentUser: any) => {
       setUser(currentUser);
-      setLoading(false); // Stop the loading spinner once we know the status
+      setLoading(false); 
     });
 
+    // Cleanup the subscription on component unmount to prevent memory leaks
     return unsubscribe;
   }, []);
 
-  // Show a loading spinner while Firebase checks the user's phone for a saved login
+  // Suspend the main application render until the authentication state is definitively resolved
   if (loading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -57,33 +73,42 @@ export default function App() {
   }
 
   return (
-  <ThemeProvider>
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Itinerary" component={ItineraryScreen} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
-            <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
-            <Stack.Screen name="EditTrip" component={EditTripScreen} options={{ presentation: 'modal' }} />
-            <Stack.Screen name="Expenses" component={ExpensesScreen} />
-            <Stack.Screen name="SelectGroup" component={SelectGroupScreen} />
-
-            {/* 2. ADD THE NEW SCREEN HERE WITH MODAL PRESENTATION */}
-            <Stack.Screen 
-              name="AddActivity" 
-              component={AddActivityScreen} 
-              options={{ presentation: 'modal' }} 
-            />
-          </>
-        ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
-        )}
-        
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ThemeProvider>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          
+          {/* Authentication Routing Gate:
+            Dynamically injects the authorized navigation stack if a valid user session exists,
+            otherwise restricts the user entirely to the Login screen.
+          */}
+          {user ? (
+            <>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Itinerary" component={ItineraryScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="AccountDetails" component={AccountDetailsScreen} />
+              <Stack.Screen name="CreateTrip" component={CreateTripScreen} />
+              
+              {/* Modal Presentations for overlay forms */}
+              <Stack.Screen 
+                name="EditTrip" 
+                component={EditTripScreen} 
+                options={{ presentation: 'modal' }} 
+              />
+              <Stack.Screen name="Expenses" component={ExpensesScreen} />
+              <Stack.Screen name="SelectGroup" component={SelectGroupScreen} />
+              <Stack.Screen 
+                name="AddActivity" 
+                component={AddActivityScreen} 
+                options={{ presentation: 'modal' }} 
+              />
+            </>
+          ) : (
+            <Stack.Screen name="Login" component={LoginScreen} />
+          )}
+          
+        </Stack.Navigator>
+      </NavigationContainer>
     </ThemeProvider>
   );
 }
